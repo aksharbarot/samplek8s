@@ -15,4 +15,4 @@ jobs:
           sudo mv kube-linter /usr/local/bin/
 
       - name: Run kube-linter on ./k8s/sample
-        run: kube-linter lint ./k8s/sample
+        run: kube-linter lint ./k8s
