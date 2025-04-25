@@ -76,7 +76,7 @@ jobs:
           echo "iso8601=$iso8601Date" >> $GITHUB_OUTPUT
 
       - name: Upload report zip file
-        if: ${{ steps.results-path.outcome == 'success' }}
+        if: ${{ env.ACT != 'true' && steps.results-path.outcome == 'success' }}
         uses: actions/upload-artifact@v4
         with:
           name: kube-linter-results-${{ steps.date.outputs.iso8601 }}
