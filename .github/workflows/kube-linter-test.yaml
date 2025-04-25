@@ -1,0 +1,18 @@
+name: Test Kube-Linter Locally
+
+on: [push]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install kube-linter
+        run: |
+          curl -sSLo kube-linter.tar.gz https://github.com/stackrox/kube-linter/releases/download/v0.6.6/kube-linter-linux.tar.gz
+          tar -xzf kube-linter.tar.gz
+          sudo mv kube-linter /usr/local/bin/
+
+      - name: Run kube-linter on ./k8s/sample
+        run: kube-linter lint ./k8s/sample
