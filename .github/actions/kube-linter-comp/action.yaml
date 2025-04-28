@@ -1,0 +1,45 @@
+name: "Kube Linter Composite Action"
+description: "Run kube-linter on Kubernetes manifests"
+
+inputs:
+  directory:
+    description: "Directory containing Kubernetes manifests"
+    required: false
+    default: "./k8s"
+  output-file-format:
+    description: "Output format for kube-linter results"
+    required: false
+    default: "json"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Create results directory
+      shell: bash
+      run: mkdir -p results
+
+    - name: Run kube-linter
+      id: kube-linter
+      uses: stackrox/kube-linter-action@v1.0.6
+      with:
+        directory: ${{ inputs.directory }}
+        config: .kube-linter-config.yaml
+        format: ${{ inputs.output-file-format }}
+        output-file: results/kube-linter.${{ inputs.output-file-format }}
+      continue-on-error: true
+
+    - name: Upload results
+      uses: actions/upload-artifact@v4
+      with:
+        name: kube-linter-results
+        path: results
+      continue-on-error: true
+
+    - name: Fail if kube-linter found issues
+      shell: bash
+      run: |
+        echo "Failing if kube-linter found issues..."
+        [[ "${{ steps.kube-linter.outcome }}" == "success" ]]
