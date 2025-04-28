@@ -1,0 +1,22 @@
+name: Test Local Kube Linter Composite Action
+
+on:
+  push:
+    branches:
+      - main
+      - test-*
+    paths:
+      - 'k8s/**'
+  pull_request:
+    paths:
+      - 'k8s/**'
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run local kube-linter composite action
+        uses: ./.github/actions/kube-linter-comp
+        with:
+          directory: './k8s'
+          output-file-format: 'json'
