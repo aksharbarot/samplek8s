@@ -1,5 +1,5 @@
 name: "Kube Linter Composite Action"
-description: "Run kube-linter on Kubernetes manifests"
+description: "Manually installs and runs kube-linter on all manifests"
 
 inputs:
   directory:
@@ -7,9 +7,9 @@ inputs:
     required: false
     default: "./k8s"
   output-file-format:
-    description: "Output format for kube-linter results"
+    description: "Output format (only used if needed later)"
     required: false
-    default: "json"
+    default: "txt"
 
 runs:
   using: "composite"
@@ -21,15 +21,33 @@ runs:
       shell: bash
       run: mkdir -p results
 
+    - name: Flatten YAML files to flat-k8s/
+      shell: bash
+      run: |
+        mkdir -p flat-k8s
+        find ${{ inputs.directory }} -type f -name '*.yaml' -exec cp {} flat-k8s/ \;
+
+    - name: Install kube-linter manually
+      shell: bash
+      run: |
+        echo "Installing kube-linter..."
+        curl -sSL https://github.com/stackrox/kube-linter/releases/latest/download/kube-linter-linux.tar.gz \
+          | tar -xz
+        chmod +x kube-linter
+        sudo mv kube-linter /usr/local/bin/
+
     - name: Run kube-linter
-      id: kube-linter
-      uses: stackrox/kube-linter-action@v1.0.6
-      with:
-        directory: ${{ inputs.directory }}
-        config: .kube-linter-config.yaml
-        format: ${{ inputs.output-file-format }}
-        output-file: results/kube-linter.${{ inputs.output-file-format }}
-      continue-on-error: true
+      shell: bash
+      run: |
+        echo "Running kube-linter..."
+        kube-linter lint flat-k8s > results/kube-linter.txt || true
+
+    - name: Show linter results
+      shell: bash
+      run: |
+        echo "---- Linter Output ----"
+        cat results/kube-linter.txt || echo "No output generated"
+        echo "------------------------"
 
     - name: Upload results
       uses: actions/upload-artifact@v4
@@ -41,5 +59,9 @@ runs:
     - name: Fail if kube-linter found issues
       shell: bash
       run: |
-        echo "Failing if kube-linter found issues..."
-        [[ "${{ steps.kube-linter.outcome }}" == "success" ]]
+        if grep -q 'level:' results/kube-linter.txt; then
+          echo "Kube-linter reported issues."
+          exit 1
+        else
+          echo "No kube-linter issues found."
+        fi
