@@ -16,7 +16,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Run local kube-linter composite action
-        uses: samplek8s/kube-linter-comp@main
+        uses: aksharbarot/samplek8s/.github/actions/kube-linter-comp@main
         with:
           directory: './k8s'
           output-file-format: 'json'
