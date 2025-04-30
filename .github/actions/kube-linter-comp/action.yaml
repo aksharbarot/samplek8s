@@ -50,6 +50,7 @@ runs:
         echo "------------------------"
 
     - name: Upload results
+      if: env.ACT != 'true'
       uses: actions/upload-artifact@v4
       with:
         name: kube-linter-results
