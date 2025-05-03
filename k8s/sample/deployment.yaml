@@ -1,17 +1,37 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: linter-fail-deployment
+  name: sample-deploy
+  namespace: demoapp
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: test
+      app: sample
   template:
     metadata:
       labels:
-        app: test
+        app: sample
     spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 2000
       containers:
-      - name: test-container
-        image: nginx
+        - name: sample-container
+          image: nginx:1.25
+          ports:
+            - containerPort: 80
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 200m
+              memory: 256Mi
