@@ -18,5 +18,5 @@ jobs:
       - name: Run local kube-linter composite action
         uses: aksharbarot/samplek8s/.github/actions/kube-linter-comp@main
         with:
-          directory: 'k8s'
+          directory: './k8s/sample'
           output-file-format: 'json'
