@@ -24,30 +24,45 @@ runs:
     - name: Flatten YAML files to flat-k8s/
       shell: bash
       run: |
+        echo "🔍 Looking for YAML files in '${{ inputs.directory }}'"
         mkdir -p flat-k8s
-        find ${{ inputs.directory }} -type f -name '*.yaml' -exec cp {} flat-k8s/ \;
+        found_files=$(find ${{ inputs.directory }} -type f -name '*.yaml' | tee results/files-to-lint.log)
+        
+        if [ -z "$found_files" ]; then
+          echo "⚠️ No YAML files found in '${{ inputs.directory }}'."
+        else
+          echo "✅ Files found:"
+          cat results/files-to-lint.log
+        fi
+        
+        # Copy files to flat-k8s
+        while IFS= read -r file; do
+          cp "$file" flat-k8s/
+        done < results/files-to-lint.log
 
     - name: Install kube-linter manually
       shell: bash
       run: |
-        echo "Installing kube-linter..."
+        echo "⬇️ Installing kube-linter..."
         curl -sSL https://github.com/stackrox/kube-linter/releases/latest/download/kube-linter-linux.tar.gz \
           | tar -xz
         chmod +x kube-linter
         sudo mv kube-linter /usr/local/bin/
+        echo "✅ kube-linter installed at $(which kube-linter)"
 
     - name: Run kube-linter
       shell: bash
       run: |
-        echo "Running kube-linter..."
+        echo "🚀 Running kube-linter on flat-k8s/"
         kube-linter lint flat-k8s > results/kube-linter.txt || true
+        echo "✅ Scan complete. Results saved to results/kube-linter.txt"
 
     - name: Show linter results
       shell: bash
       run: |
-        echo "---- Linter Output ----"
-        cat results/kube-linter.txt || echo "No output generated"
-        echo "------------------------"
+        echo "📝 ---- Linter Output ----"
+        cat results/kube-linter.txt || echo "⚠️ No output generated"
+        echo "-------------------------"
 
     - name: Upload results
       if: env.ACT != 'true'
@@ -61,8 +76,8 @@ runs:
       shell: bash
       run: |
         if grep -q 'level:' results/kube-linter.txt; then
-          echo "Kube-linter reported issues."
+          echo "❌ Kube-linter reported issues."
           exit 1
         else
-          echo "No kube-linter issues found."
+          echo "✅ No kube-linter issues found."
         fi
