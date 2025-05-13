@@ -1,0 +1,41 @@
+name: Lint Dockerfiles
+
+on:
+  push:
+    paths:
+      - '**/Dockerfile'
+  pull_request:
+    paths:
+      - '**/Dockerfile'
+
+jobs:
+  dockerfile-lint:
+    runs-on: ubuntu-latest
+    name: Dockerfile Linting with Hadolint
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Install Hadolint
+        run: |
+          wget -O /usr/local/bin/hadolint https://github.com/hadolint/hadolint/releases/latest/download/hadolint-Linux-x86_64
+          chmod +x /usr/local/bin/hadolint
+
+      - name: Run Hadolint and Save Results
+        run: |
+          mkdir -p lint-reports
+          touch lint-reports/hadolint.log
+          FAIL=0
+          for file in $(find . -type f -name 'Dockerfile'); do
+            echo "Linting $file" | tee -a lint-reports/hadolint.log
+            hadolint "$file" 2>&1 | tee -a lint-reports/hadolint.log || FAIL=1
+          done
+          exit $FAIL
+
+      - name: Upload Lint Logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dockerfile-lint-report
+          path: lint-reports/hadolint.log
