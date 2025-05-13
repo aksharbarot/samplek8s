@@ -1,0 +1,48 @@
+name: Lint and Format Shell Scripts
+
+on:
+  push:
+    paths:
+      - '**/*.sh'
+  pull_request:
+    paths:
+      - '**/*.sh'
+
+jobs:
+  shellcheck-lint:
+    runs-on: ubuntu-latest
+    name: Shell Lint & Format
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y shellcheck shfmt
+
+      - name: Run ShellCheck and save logs
+        run: |
+          mkdir -p lint-reports
+          touch lint-reports/shellcheck.log
+          FAIL=0
+          for file in $(find . -type f -name '*.sh'); do
+            echo "Linting $file" | tee -a lint-reports/shellcheck.log
+            shellcheck "$file" 2>&1 | tee -a lint-reports/shellcheck.log || FAIL=1
+          done
+          exit $FAIL
+
+      - name: Format with shfmt
+        run: shfmt -w .
+
+      - name: Commit formatted shell scripts
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "chore: auto-format shell scripts using shfmt"
+
+      - name: Upload Lint Logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: shell-lint-report
+          path: lint-reports/shellcheck.log
