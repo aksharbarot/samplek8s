@@ -56,6 +56,9 @@ jobs:
           commit_message: "chore: auto-format shell scripts using shfmt"
           branch: docker-lint
           token: ${{ secrets.TOKEN }}
+          commit_user_name: "robot-auto"
+          commit_user_email: "axar1990@gmail.com"
+          commit_author: "Akshar Barot <axar1990@gmail.com>"
 
       - name: Upload Lint Logs
         if: ${{ env.ACT != 'true' && steps.results-path.outcome == 'success' }}
