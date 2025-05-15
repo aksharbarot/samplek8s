@@ -20,11 +20,11 @@ jobs:
 
       - name: Set Git remote with token for push
         run: |
-          git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}
+          git remote set-url origin https://x-access-token:${{ secrets.TOKEN }}@github.com/${{ github.repository }}
       
       - uses: actions/checkout@v4
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.TOKEN }}
 
       - name: Check current branch and remote
         run: |
@@ -55,7 +55,7 @@ jobs:
         with:
           commit_message: "chore: auto-format shell scripts using shfmt"
           branch: docker-lint
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.TOKEN }}
 
       - name: Upload Lint Logs
         if: ${{ env.ACT != 'true' && steps.results-path.outcome == 'success' }}
