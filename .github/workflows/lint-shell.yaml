@@ -13,8 +13,25 @@ jobs:
     runs-on: ubuntu-latest
     name: Shell Lint & Format
 
+    permissions:
+      contents: write
+
     steps:
+
+      - name: Set Git remote with token for push
+        run: |
+          git config --global user.email "axar1990@gmail.com"
+          git config --global user.name "aksharbarot"
+          git remote set-url origin https://x-access-token:${{ secrets.PAT }}@github.com/${{ github.repository }}
+      
       - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.PAT }}
+
+      - name: Check current branch and remote
+        run: |
+            echo "Current branch: $(git rev-parse --abbrev-ref HEAD)"
+            git remote -v
 
       - name: Install tools
         run: |
@@ -39,9 +56,11 @@ jobs:
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
           commit_message: "chore: auto-format shell scripts using shfmt"
+          branch: docker-lint
+          token: ${{ secrets.PAT }}
 
       - name: Upload Lint Logs
-        if: always()
+        if: ${{ env.ACT != 'true' && steps.results-path.outcome == 'success' }}
         uses: actions/upload-artifact@v4
         with:
           name: shell-lint-report

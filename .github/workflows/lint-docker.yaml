@@ -34,7 +34,7 @@ jobs:
           exit $FAIL
 
       - name: Upload Lint Logs
-        if: always()
+        if: ${{ env.ACT != 'true' && steps.results-path.outcome == 'success' }}
         uses: actions/upload-artifact@v4
         with:
           name: dockerfile-lint-report
