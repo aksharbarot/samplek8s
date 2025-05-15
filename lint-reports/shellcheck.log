@@ -1,2 +1,4 @@
 Linting ./scripts/setup.sh
 Linting ./scripts/entrypoint.sh
+Linting ./scripts/setup.sh
+Linting ./scripts/entrypoint.sh
