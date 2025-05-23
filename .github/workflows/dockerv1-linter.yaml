@@ -115,6 +115,7 @@ jobs:
 
       - name: Fail early if no images built
         run: |
+          echo "🧾 Image list: '${{ env.IMAGE_LIST }}'"
           if [ -z "${{ env.IMAGE_LIST }}" ]; then
             echo "❌ No Docker images built. Failing Trivy scan."
             exit 1
