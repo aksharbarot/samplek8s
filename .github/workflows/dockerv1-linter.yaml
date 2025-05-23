@@ -21,18 +21,14 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Setup
-        run: mkdir -p reports images
+        run: mkdir -p reports
 
       - name: Install Hadolint
         run: |
           wget -O /usr/local/bin/hadolint https://github.com/hadolint/hadolint/releases/latest/download/hadolint-Linux-x86_64
           chmod +x /usr/local/bin/hadolint
 
-      - name: Install Trivy (optional for testing builds)
-        run: |
-          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin
-
-      - name: Lint, Build, and Save Docker images
+      - name: Lint and Build Dockerfiles
         id: scan
         run: |
           set -e
@@ -54,8 +50,7 @@ jobs:
 
             echo "🐳 Building image: $image_tag"
             if docker build -f "$file" -t "$image_tag" "$context_dir" > "reports/${base}_build.txt" 2>&1; then
-              echo "$image_tag" >> image_list.txt
-              docker save "$image_tag" -o "images/${image_tag}.tar"
+              echo "$file" >> image_list.txt
             else
               echo "❌ Build failed for $file"
               cat "reports/${base}_build.txt"
@@ -65,19 +60,17 @@ jobs:
 
           echo "fail_code=$FAIL" >> $GITHUB_OUTPUT
 
-      - name: Upload built images
-        uses: actions/upload-artifact@v4
-        with:
-          name: docker-images
-          path: |
-            images/
-            image_list.txt
-
       - name: Upload lint/build reports
         uses: actions/upload-artifact@v4
         with:
           name: docker-reports
           path: reports/
+
+      - name: Upload image list
+        uses: actions/upload-artifact@v4
+        with:
+          name: image-list
+          path: image_list.txt
 
       - name: Fail if lint or build errors found
         if: steps.scan.outputs.fail_code == '1'
@@ -97,58 +90,51 @@ jobs:
         run: |
           curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin
 
-      - name: Download image artifacts
+      - name: Download image list
         uses: actions/download-artifact@v4
         with:
-          name: docker-images
-          path: images
+          name: image-list
+          path: image-list
 
-      - name: Load Docker images
+      - name: Rebuild Docker images
         run: |
-          for tar in images/*.tar; do
-            docker load -i "$tar"
-          done
+          mkdir -p reports
+          while read -r file; do
+            base=$(basename "$file")
+            image_tag="localscan-${base,,}"
+            context_dir=$(dirname "$file")
+            echo "🐳 Rebuilding image $image_tag"
+            docker build -f "$file" -t "$image_tag" "$context_dir"
+            echo "$image_tag" >> image-list/image_tags.txt
+          done < image-list/image_list.txt
 
-      - name: Run Trivy scan and generate JSON
+      - name: Run Trivy Scan
         run: |
           mkdir -p reports
           while read -r image; do
             echo "🔍 Scanning image: $image"
             trivy image --format json --ignore-unfixed --severity CRITICAL,HIGH,MEDIUM "$image" > "reports/trivy_${image}.json"
-          done < images/image_list.txt
+          done < image-list/image_tags.txt
           jq -s '.' reports/trivy_*.json > reports/trivy_combined.json
-
-      - name: Upload Trivy scan report
-        uses: actions/upload-artifact@v4
-        with:
-          name: trivy-report
-          path: reports/trivy_combined.json
 
       - name: Convert Trivy JSON to annotation format
         run: |
-          jq -n '
-            [inputs[] | select(.Vulnerabilities) | .Vulnerabilities[]? |
-              {
-                path: "Dockerfile",
-                start_line: 1,
-                end_line: 1,
-                annotation_level: (if .Severity == "CRITICAL" then "failure" elif .Severity == "HIGH" then "warning" else "notice" end),
-                message: (.VulnerabilityID + " in " + .PkgName + " – " + .PrimaryURL),
-                title: "Trivy Scan"
-              }
-            ]
-          ' reports/trivy_combined.json > reports/annotations.json
+          jq -n '[inputs[] | select(.Vulnerabilities) | .Vulnerabilities[]? |
+            {
+              path: "Dockerfile",
+              start_line: 1,
+              end_line: 1,
+              annotation_level: (if .Severity == "CRITICAL" then "failure" elif .Severity == "HIGH" then "warning" else "notice" end),
+              message: (.VulnerabilityID + " in " + .PkgName + " – " + .PrimaryURL),
+              title: "Trivy Scan"
+            }]' reports/trivy_combined.json > reports/annotations.json
 
-      - name: Annotate Trivy issues with ::warning (fallback)
-        run: |
-          jq -c '.[]' reports/annotations.json | while read -r ann; do
-            FILE=$(echo "$ann" | jq -r .path)
-            LINE=$(echo "$ann" | jq -r .start_line)
-            LEVEL=$(echo "$ann" | jq -r .annotation_level)
-            TITLE=$(echo "$ann" | jq -r .title)
-            MESSAGE=$(echo "$ann" | jq -r .message)
-            echo "::${LEVEL} file=${FILE},line=${LINE},title=${TITLE}::$MESSAGE"
-          done
+      - name: Annotate PR with Trivy issues (GitHub Checks)
+        if: github.event_name == 'pull_request'
+        uses: github/annotate-warning-error-action@v1
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          input: reports/annotations.json
 
       - name: Inline Trivy warnings (non-PR fallback)
         if: github.event_name != 'pull_request'
