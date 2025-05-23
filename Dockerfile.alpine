@@ -1,6 +1,6 @@
 FROM alpine:3.18
 
-# This version is still available and known to be vulnerable
-RUN apk add --no-cache openssl=3.0.9-r2
+# No version pin — gets whatever is in the repo (still vulnerable as of now)
+RUN apk add --no-cache openssl
 
 CMD ["openssl", "version"]
