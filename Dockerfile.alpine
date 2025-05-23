@@ -1,6 +1,8 @@
 FROM alpine:3.18
 
-# No version pin — gets whatever is in the repo (still vulnerable as of now)
-RUN apk add --no-cache openssl
+RUN apk add --no-cache curl openssl busybox
 
-CMD ["openssl", "version"]
+# Optional: test secret scanning
+ENV AWS_SECRET_ACCESS_KEY="AKIAFAKEKEYSECRET123456"
+
+CMD ["curl", "--version"]
