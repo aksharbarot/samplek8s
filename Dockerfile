@@ -1,6 +1,6 @@
 FROM alpine:3.18
 
-LABEL maintainer="your-team@example.com"
+LABEL maintainer="your-team@examplee.com"
 
 COPY scripts/entrypoint.sh /entrypoint.sh
 
