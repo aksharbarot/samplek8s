@@ -139,11 +139,16 @@ jobs:
             ]
           ' reports/trivy_combined.json > reports/annotations.json
 
-      - name: Annotate PR with Trivy results (GitHub UI)
-        if: github.event_name == 'pull_request'
-        uses: github/codeql-action/annotate@v1
-        with:
-          json-file: reports/annotations.json
+      - name: Annotate Trivy issues with ::warning (fallback)
+        run: |
+          jq -c '.[]' reports/annotations.json | while read -r ann; do
+            FILE=$(echo "$ann" | jq -r .path)
+            LINE=$(echo "$ann" | jq -r .start_line)
+            LEVEL=$(echo "$ann" | jq -r .annotation_level)
+            TITLE=$(echo "$ann" | jq -r .title)
+            MESSAGE=$(echo "$ann" | jq -r .message)
+            echo "::${LEVEL} file=${FILE},line=${LINE},title=${TITLE}::$MESSAGE"
+          done
 
       - name: Inline Trivy warnings (non-PR fallback)
         if: github.event_name != 'pull_request'
