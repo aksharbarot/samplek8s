@@ -121,19 +121,17 @@ jobs:
         run: |
           jq -n '[inputs[] | select(.Vulnerabilities) | .Vulnerabilities[]? |
             {
-              path: "Dockerfile",
-              start_line: 1,
-              end_line: 1,
-              annotation_level: (if .Severity == "CRITICAL" then "failure" elif .Severity == "HIGH" then "warning" else "notice" end),
-              message: (.VulnerabilityID + " in " + .PkgName + " – " + .PrimaryURL),
-              title: "Trivy Scan"
+              file: "Dockerfile",
+              line: 1,
+              level: (if .Severity == "CRITICAL" then "failure" elif .Severity == "HIGH" then "warning" else "notice" end),
+              message: (.VulnerabilityID + " in " + .PkgName + " – " + .PrimaryURL)
             }]' reports/trivy_combined.json > reports/annotations.json
 
-      - name: Annotate PR with Trivy issues (GitHub Checks)
+      - name: Annotate PR with Trivy issues using annotate-action
         if: github.event_name == 'pull_request'
-        uses: github/annotate-warning-error-action@v1
+        uses: yuzutech/annotate-action@v1
         with:
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          repo-token: ${{ secrets.TOKEN }}
           input: reports/annotations.json
 
       - name: Inline Trivy warnings (non-PR fallback)
