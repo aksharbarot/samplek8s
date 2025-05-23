@@ -1,3 +1,6 @@
 FROM alpine:3.18
 
-CMD ["echo", "Hello from clean Dockerfile!.!"]
+# Add known vulnerable package (e.g., openssl)
+RUN apk add --no-cache openssl=3.0.9-r3
+
+CMD ["openssl", "version"]
