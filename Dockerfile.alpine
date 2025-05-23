@@ -1,6 +1,6 @@
 FROM alpine:3.18
 
-# Add known vulnerable package (e.g., openssl)
-RUN apk add --no-cache openssl=3.0.9-r3
+# This version is still available and known to be vulnerable
+RUN apk add --no-cache openssl=3.0.9-r2
 
 CMD ["openssl", "version"]
