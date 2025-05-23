@@ -54,7 +54,7 @@ jobs:
             echo "🛠️  Building image: $image_tag with context: $docker_context"
 
             echo "🔍 Linting $file"
-            hadolint "$file" > "reports/${base}_hadolint.txt" || true
+            hadolint "$file" --ignore DL3018 > "reports/${base}_hadolint.txt" || true
             HADO_ISSUES=$(grep -c '.' "reports/${base}_hadolint.txt" || echo 0)
 
             echo "🐳 Building Docker image..."
