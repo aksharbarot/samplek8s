@@ -1,6 +1,6 @@
 FROM alpine:3.18
 
-# Optional: test secret scanning
-ENV AWS_SECRET_ACCESS_KEY="AKIAFAKEKEYSECRET123456"
+# Install packages that are **known to be vulnerable** and are still available
+RUN apk add --no-cache openssl curl busybox
 
-CMD ["curl", "--version"]
+CMD ["openssl", "version"]
