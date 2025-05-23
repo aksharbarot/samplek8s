@@ -1,6 +1,6 @@
 FROM alpine:3.18
 
-# Install packages that are **known to be vulnerable** and are still available
+# Install packages that are **known to be vulnerable** and are still  available
 RUN apk add --no-cache openssl curl busybox
 
 CMD ["openssl", "version"]
