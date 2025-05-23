@@ -1,0 +1,153 @@
+name: Docker Lint & Scan
+
+on:
+  push:
+    paths:
+      - '**/Dockerfile*'
+  pull_request:
+    paths:
+      - '**/Dockerfile*'
+  workflow_dispatch:
+
+jobs:
+  docker-lint:
+    runs-on: ubuntu-latest
+
+    outputs:
+      image_list: ${{ steps.set-images.outputs.image_list }}
+      fail_code: ${{ steps.scan.outputs.fail_code }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Prepare reports folder
+        run: mkdir -p reports
+
+      - name: Install hadolint
+        run: |
+          wget -O /usr/local/bin/hadolint https://github.com/hadolint/hadolint/releases/latest/download/hadolint-Linux-x86_64
+          chmod +x /usr/local/bin/hadolint
+
+      - name: Install Trivy manually
+        run: |
+          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin
+
+      - name: Debug list of Dockerfiles
+        run: |
+          echo "🧾 Searching for Dockerfile* files..."
+          find . -type f -name 'Dockerfile*' ! -path "./reports/*"
+
+      - name: Lint, Build and collect image list
+        id: scan
+        run: |
+          set -e
+          FAIL=0
+          mkdir -p reports
+          > reports/images_to_scan.txt
+
+          for file in $(find . -type f -name 'Dockerfile*' ! -path "./reports/*"); do
+            echo "▶️ Found Dockerfile: $file"
+            base=$(basename "$file")
+            image_tag="localscan-${base,,}"
+            docker_context=$(dirname "$file")
+            echo "🛠️  Building image: $image_tag with context: $docker_context"
+
+            echo "🔍 Linting $file"
+            hadolint "$file" > "reports/${base}_hadolint.txt" || true
+            HADO_ISSUES=$(grep -c '.' "reports/${base}_hadolint.txt" || echo 0)
+
+            echo "🐳 Building Docker image..."
+            if docker build -f "$file" -t "$image_tag" "$docker_context" > "reports/${base}_build.txt" 2>&1; then
+              echo "✅ Build succeeded for $file"
+              echo "$image_tag" >> reports/images_to_scan.txt
+            else
+              echo "❌ Build failed for $file"
+              cat "reports/${base}_build.txt"
+              FAIL=1
+              continue
+            fi
+
+            if [ "$HADO_ISSUES" -gt 0 ]; then
+              echo "❌ Lint issues found in $file"
+              FAIL=1
+            fi
+          done
+
+          echo "fail_code=$FAIL" >> $GITHUB_OUTPUT
+
+      - name: Load image names into env var
+        id: set-images
+        run: |
+          if [[ -s reports/images_to_scan.txt ]]; then
+            IMAGE_LIST=$(paste -sd ' ' reports/images_to_scan.txt)
+            echo "IMAGE_LIST=$IMAGE_LIST" >> $GITHUB_ENV
+            echo "image_list=$IMAGE_LIST" >> $GITHUB_OUTPUT
+          else
+            echo "⚠️ No images to scan"
+            echo "IMAGE_LIST=" >> $GITHUB_ENV
+            echo "image_list=" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Show image list
+        run: 'echo "📦 Images to scan: ${{ env.IMAGE_LIST }}"'
+
+      - name: Upload reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: docker-lint-reports
+          path: reports
+
+      - name: Fail if lint or build errors found
+        if: steps.scan.outputs.fail_code == '1'
+        run: |
+          echo "❌ Lint or build errors detected"
+          exit 1
+
+  trivy-scan:
+    needs: docker-lint
+    runs-on: ubuntu-latest
+    if: ${{ needs.docker-lint.outputs.image_list != '' }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Trivy manually
+        run: |
+          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin
+
+      - name: Restore image list
+        run: echo "IMAGE_LIST=${{ needs.docker-lint.outputs.image_list }}" >> $GITHUB_ENV
+
+      - name: Scan all images with Trivy (JSON)
+        run: |
+          mkdir -p reports
+          for image in ${{ env.IMAGE_LIST }}; do
+            echo "🔍 Scanning $image"
+            trivy image --format json --ignore-unfixed --severity CRITICAL,HIGH,MEDIUM "$image" > "reports/trivy_${image}.json" || true
+          done
+          jq -s '.' reports/trivy_*.json > reports/trivy_combined.json || true
+
+      - name: Upload JSON Trivy report
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-json-report
+          path: reports/trivy_combined.json
+
+      - name: Annotate PR with Trivy issues
+        uses: yuzutech/annotate-pull-request-from-check@v1
+        with:
+          check_name: Trivy Docker Scan
+          title: Trivy Report
+          report: reports/trivy_combined.json
+          token: ${{ secrets.TOKEN }}
+
+      - name: Fail if vulnerabilities found
+        run: |
+          if grep -q '"Severity":"CRITICAL"\|"Severity":"HIGH"\|"Severity":"MEDIUM"' reports/trivy_combined.json; then
+            echo "❌ Vulnerabilities found"
+            exit 1
+          else
+            echo "✅ No critical/high/medium vulnerabilities"
+          fi
