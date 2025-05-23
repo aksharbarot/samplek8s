@@ -155,3 +155,9 @@ jobs:
           else
             echo "✅ No critical/high/medium vulnerabilities"
           fi
+      - name: Fail if unsupported OS warning detected
+        run: |
+          if grep -q "no longer supported by the distribution" reports/trivy_combined.json; then
+            echo "❌ Unsupported OS detected in Trivy scan"
+            exit 1
+          fi
