@@ -90,7 +90,7 @@ jobs:
           fi
 
       - name: Show image list
-        run: 'echo "📦 Images to scan: ${{ env.IMAGE_LIST }}"'
+        run: echo "📦 Images to scan: ${{ env.IMAGE_LIST }}"
 
       - name: Upload reports
         uses: actions/upload-artifact@v4
@@ -129,19 +129,27 @@ jobs:
           done
           jq -s '.' reports/trivy_*.json > reports/trivy_combined.json || true
 
-      - name: Upload JSON Trivy report
+      - name: Annotate PR with Trivy issues (inline warnings)
+        run: |
+          if [ -f reports/trivy_combined.json ]; then
+            jq -c '.[] | select(.Vulnerabilities) | .Vulnerabilities[]' reports/trivy_combined.json | while read -r vuln; do
+              ID=$(echo "$vuln" | jq -r .VulnerabilityID)
+              PACKAGE=$(echo "$vuln" | jq -r .PkgName)
+              SEVERITY=$(echo "$vuln" | jq -r .Severity)
+              URL=$(echo "$vuln" | jq -r .PrimaryURL)
+
+              MESSAGE="$ID in $PACKAGE – Severity: $SEVERITY – $URL"
+              echo "::warning file=Dockerfile,line=1,title=Trivy::$MESSAGE"
+            done
+          else
+            echo "⚠️ No Trivy JSON found. Skipping annotation."
+          fi
+
+      - name: Upload Trivy JSON report
         uses: actions/upload-artifact@v4
         with:
           name: trivy-json-report
           path: reports/trivy_combined.json
-
-      - name: Annotate PR with Trivy issues
-        uses: yuzutech/annotate-pull-request-from-check@v1.0.0
-        with:
-          check_name: Trivy Docker Scan
-          title: Trivy Report
-          report: reports/trivy_combined.json
-          token: ${{ secrets.TOKEN }}
 
       - name: Fail if vulnerabilities found
         run: |
