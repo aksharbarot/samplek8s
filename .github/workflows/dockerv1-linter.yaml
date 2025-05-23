@@ -136,7 +136,7 @@ jobs:
           path: reports/trivy_combined.json
 
       - name: Annotate PR with Trivy issues
-        uses: yuzutech/annotate-pull-request-from-check@v1
+        uses: yuzutech/annotate-pull-request-from-check@v1.0.0
         with:
           check_name: Trivy Docker Scan
           title: Trivy Report
