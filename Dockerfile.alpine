@@ -1,7 +1,5 @@
 FROM alpine:3.18
 
-RUN apk add --no-cache curl openssl busybox
-
 # Optional: test secret scanning
 ENV AWS_SECRET_ACCESS_KEY="AKIAFAKEKEYSECRET123456"
 
