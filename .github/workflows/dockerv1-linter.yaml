@@ -90,7 +90,8 @@ jobs:
           fi
 
       - name: Show image list
-        run: echo "📦 Images to scan: ${{ env.IMAGE_LIST }}"
+        run: |
+          echo "Images to scan: ${{ env.IMAGE_LIST }}"
 
       - name: Upload reports
         uses: actions/upload-artifact@v4
