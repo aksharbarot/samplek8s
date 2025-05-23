@@ -1,4 +1,4 @@
-name: Docker Lint & Scan
+name: Docker Lint & Trivy Scan
 
 on:
   push:
@@ -29,16 +29,11 @@ jobs:
           wget -O /usr/local/bin/hadolint https://github.com/hadolint/hadolint/releases/latest/download/hadolint-Linux-x86_64
           chmod +x /usr/local/bin/hadolint
 
-      - name: Install Trivy manually
+      - name: Install Trivy
         run: |
           curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin
 
-      - name: Debug list of Dockerfiles
-        run: |
-          echo "🧾 Searching for Dockerfile* files..."
-          find . -type f -name 'Dockerfile*' ! -path "./reports/*"
-
-      - name: Lint, Build and collect image list
+      - name: Lint, Build, and collect images
         id: scan
         run: |
           set -e
@@ -51,15 +46,13 @@ jobs:
             base=$(basename "$file")
             image_tag="localscan-${base,,}"
             docker_context=$(dirname "$file")
-            echo "🛠️  Building image: $image_tag with context: $docker_context"
 
             echo "🔍 Linting $file"
             hadolint "$file" --ignore DL3018 > "reports/${base}_hadolint.txt" || true
             HADO_ISSUES=$(grep -c '.' "reports/${base}_hadolint.txt" || echo 0)
 
-            echo "🐳 Building Docker image..."
+            echo "🐳 Building image: $image_tag"
             if docker build -f "$file" -t "$image_tag" "$docker_context" > "reports/${base}_build.txt" 2>&1; then
-              echo "✅ Build succeeded for $file"
               echo "$image_tag" >> reports/images_to_scan.txt
             else
               echo "❌ Build failed for $file"
@@ -89,10 +82,6 @@ jobs:
             echo "image_list=" >> $GITHUB_OUTPUT
           fi
 
-      - name: Show image list
-        run: |
-          echo "Images to scan: ${{ env.IMAGE_LIST }}"
-
       - name: Upload reports
         uses: actions/upload-artifact@v4
         with:
@@ -114,49 +103,51 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Install Trivy manually
+      - name: Install Trivy
         run: |
           curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin
 
       - name: Restore image list
         run: echo "IMAGE_LIST=${{ needs.docker-lint.outputs.image_list }}" >> $GITHUB_ENV
 
-      - name: Scan all images with Trivy (JSON)
-        run: |
-          mkdir -p reports
-          for image in ${{ env.IMAGE_LIST }}; do
-            echo "🔍 Scanning $image"
-            trivy image --format json --ignore-unfixed --severity CRITICAL,HIGH,MEDIUM "$image" > "reports/trivy_${image}.json" || true
-          done
-          jq -s '.' reports/trivy_*.json > reports/trivy_combined.json || true
+      - name: Debug built images
+        run: docker images
 
-      - name: Annotate PR with Trivy issues (inline warnings)
+      - name: Fail early if no images built
         run: |
-          if [ -f reports/trivy_combined.json ]; then
-            jq -c '.[] | select(.Vulnerabilities) | .Vulnerabilities[]' reports/trivy_combined.json | while read -r vuln; do
-              ID=$(echo "$vuln" | jq -r .VulnerabilityID)
-              PACKAGE=$(echo "$vuln" | jq -r .PkgName)
-              SEVERITY=$(echo "$vuln" | jq -r .Severity)
-              URL=$(echo "$vuln" | jq -r .PrimaryURL)
-
-              MESSAGE="$ID in $PACKAGE – Severity: $SEVERITY – $URL"
-              echo "::warning file=Dockerfile,line=1,title=Trivy::$MESSAGE"
-            done
-          else
-            echo "⚠️ No Trivy JSON found. Skipping annotation."
+          if [ -z "${{ env.IMAGE_LIST }}" ]; then
+            echo "❌ No Docker images built. Failing Trivy scan."
+            exit 1
           fi
 
-      - name: Upload Trivy JSON report
-        uses: actions/upload-artifact@v4
-        with:
-          name: trivy-json-report
-          path: reports/trivy_combined.json
-
-      - name: Fail if vulnerabilities found
+      - name: Scan images with Trivy (JSON)
         run: |
-          if grep -q '"Severity":"CRITICAL"\|"Severity":"HIGH"\|"Severity":"MEDIUM"' reports/trivy_combined.json; then
-            echo "❌ Vulnerabilities found"
+          set -e
+          mkdir -p reports
+          for image in $IMAGE_LIST; do
+            echo "🔍 Scanning $image"
+            trivy image --format json --ignore-unfixed --severity CRITICAL,HIGH,MEDIUM "$image" > "reports/trivy_${image}.json"
+          done
+          jq -s '.' reports/trivy_*.json > reports/trivy_combined.json
+
+      - name: Annotate PR with Trivy vulnerabilities
+        run: |
+          COUNT=$(jq '[.[] | .Vulnerabilities[]? | select(.Severity == "CRITICAL" or .Severity == "HIGH" or .Severity == "MEDIUM")] | length' reports/trivy_combined.json)
+          echo "🧪 Found $COUNT critical/high/medium vulnerabilities"
+          if [ "$COUNT" -gt 0 ]; then
+            jq -c '.[] | .Vulnerabilities[]? | select(.Severity == "CRITICAL" or .Severity == "HIGH" or .Severity == "MEDIUM")' reports/trivy_combined.json | while read -r vuln; do
+              ID=$(echo "$vuln" | jq -r .VulnerabilityID)
+              PKG=$(echo "$vuln" | jq -r .PkgName)
+              SEVERITY=$(echo "$vuln" | jq -r .Severity)
+              echo "::warning title=Trivy $SEVERITY::$ID found in $PKG"
+            done
             exit 1
           else
             echo "✅ No critical/high/medium vulnerabilities"
           fi
+
+      - name: Upload Trivy report
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-report
+          path: reports/trivy_combined.json
