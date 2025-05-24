@@ -114,12 +114,9 @@ jobs:
           > reports/trivy_logs.txt
           while read -r image; do
             echo "🔍 Scanning image: $image"
-            trivy image --format json --ignore-unfixed --severity CRITICAL,HIGH,MEDIUM "$image" \
-              > "reports/trivy_${image}.json" \
-              2>> reports/trivy_logs.txt
-            done < image-list/image_tags.txt
-            jq -s '.' reports/trivy_*.json > reports/trivy_combined.json
-
+            trivy image --format json --ignore-unfixed --severity CRITICAL,HIGH,MEDIUM "$image" > "reports/trivy_${image}.json" 2>> reports/trivy_logs.txt
+          done < image-list/image_tags.txt
+          jq -s '.' reports/trivy_*.json > reports/trivy_combined.json
 
       - name: Convert Trivy JSON to annotation format
         run: |
@@ -135,8 +132,9 @@ jobs:
         if: github.event_name == 'pull_request'
         uses: yuzutech/annotations-action@v0.5.0
         with:
-          repo-token: ${{ secrets.TOKEN }}
-          input: reports/annotations.json
+          repo-token: "${{ secrets.TOKEN }}"
+          title: 'lint'
+          input: './reports/annotations.json'
 
       - name: Inline Trivy warnings (non-PR fallback)
         if: github.event_name != 'pull_request'
@@ -159,10 +157,12 @@ jobs:
           else
             echo "✅ No critical/high/medium vulnerabilities"
           fi
+
       - name: Fail if unsupported OS warning detected
         run: |
           if grep -q "no longer supported by the distribution" reports/trivy_logs.txt; then
             echo "❌ Unsupported OS detected in Trivy scan"
             exit 1
+          else
+            echo "✅ No unsupported OS detected"
           fi
-
