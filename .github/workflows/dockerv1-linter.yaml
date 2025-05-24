@@ -164,13 +164,13 @@ jobs:
       - name: Inline Trivy warnings (non-PR fallback)
         if: github.event_name != 'pull_request'
         run: |
-          jq -s '.[] .Results[]? .Vulnerabilities[]?' reports/*.json \
+          jq -s '.[] | .Results[]? | .Vulnerabilities[]?' reports/*.json \
             | while read -r v; do
                 ID=$(echo "$v" | jq -r .VulnerabilityID)
-                PACKAGE=$(echo "$v" | jq -r .PkgName)
+                PKG=$(echo "$v" | jq -r .PkgName)
                 SEV=$(echo "$v" | jq -r .Severity)
                 URL=$(echo "$v" | jq -r .PrimaryURL)
-                echo "::warning file=Dockerfile,line=1,title=Trivy::$ID in $PACKAGE – Severity: $SEV – $URL"
+                echo "::warning file=Dockerfile,line=1,title=Trivy::$ID in $PKG – Severity: $SEV – $URL"
               done
 
       - name: Aggregate & Fail on CVEs
