@@ -1,3 +1,4 @@
+# .github/workflows/docker-lint-and-trivy.yaml
 name: Docker Lint & Trivy Scan
 
 on:
@@ -130,7 +131,7 @@ jobs:
               "$img" \
               > "$out" 2>> reports/trivy_warnings.log || true
 
-            # guarantee valid JSON even if Trivy wrote nothing
+            # ensure valid JSON even if Trivy emitted no JSON
             if [ ! -s "$out" ] || ! head -c1 "$out" | grep -q '{'; then
               echo '{"Results":[]}' > "$out"
             fi
@@ -170,7 +171,6 @@ jobs:
         if: github.event_name != 'pull_request'
         run: |
           for file in reports/*.json; do
-            echo "--- $file"
             jq -c '.Results[]? .Vulnerabilities[]?' "$file" 2>/dev/null \
             | while read -r v; do
                 ID=$(echo "$v" | jq -r .VulnerabilityID)
@@ -181,19 +181,31 @@ jobs:
               done
           done
 
-      - name: Aggregate & Fail on CVEs
+      - name: Aggregate, report per-severity & fail on CVEs
         run: |
-          total=0
+          total_crit=0
+          total_high=0
+          total_med=0
+
           for file in reports/*.json; do
-            count=$(jq '[.Results[]? .Vulnerabilities[]?
-                          | select(.Severity=="CRITICAL" or .Severity=="HIGH" or .Severity=="MEDIUM")
-                        ] | length' "$file")
-            total=$(( total + count ))
+            crit=$(jq '[.Results[]? .Vulnerabilities[]? | select(.Severity=="CRITICAL")] | length' "$file")
+            high=$(jq '[.Results[]? .Vulnerabilities[]? | select(.Severity=="HIGH")] | length' "$file")
+            med=$(jq '[.Results[]? .Vulnerabilities[]? | select(.Severity=="MEDIUM")] | length' "$file")
+
+            total_crit=$(( total_crit + crit ))
+            total_high=$(( total_high + high ))
+            total_med=$(( total_med + med ))
           done
-          echo "🧪 Found $total CRITICAL/HIGH/MEDIUM vulnerabilities"
+
+          echo "🧪 Vulnerability summary:"
+          echo "    CRITICAL: $total_crit"
+          echo "    HIGH:     $total_high"
+          echo "    MEDIUM:   $total_med"
+
+          total=$(( total_crit + total_high + total_med ))
           if [ "$total" -gt 0 ]; then
-            echo "❌ Vulnerabilities detected!"
+            echo "❌ Failing because $total total CRITICAL/HIGH/MEDIUM vulnerabilities were found"
             exit 1
           else
-            echo "✅ No critical/high/medium vulnerabilities"
+            echo "✅ No CRITICAL/HIGH/MEDIUM vulnerabilities"
           fi
