@@ -98,15 +98,30 @@ jobs:
 
       - name: Rebuild Docker images
         run: |
-          mkdir -p reports
+          mkdir -p image-list
+          > image-list/image_tags.txt
+          if [[ ! -s image-list/image_list.txt ]]; then
+            echo "❌ No Dockerfiles were listed from lint job. Cannot scan."
+            exit 1
+          fi
+
           while read -r file; do
             base=$(basename "$file")
             image_tag="localscan-${base,,}"
             context_dir=$(dirname "$file")
-            echo "🐳 Rebuilding image $image_tag"
-            docker build -f "$file" -t "$image_tag" "$context_dir"
-            echo "$image_tag" >> image-list/image_tags.txt
+            echo "🐳 Rebuilding image $image_tag from $file"
+            if docker build -f "$file" -t "$image_tag" "$context_dir"; then
+              echo "$image_tag" >> image-list/image_tags.txt
+            else
+              echo "❌ Build failed for $file"
+              exit 1
+            fi
           done < image-list/image_list.txt
+
+      - name: Debug image list
+        run: |
+          echo "Contents of image_tags.txt:"
+          cat image-list/image_tags.txt || echo "(file missing or empty)"
 
       - name: Run Trivy Scan
         run: |
@@ -133,7 +148,7 @@ jobs:
         uses: yuzutech/annotations-action@v0.5.0
         with:
           repo-token: "${{ secrets.TOKEN }}"
-          title: 'lint'
+          title: 'Trivy Scan Results'
           input: './reports/annotations.json'
 
       - name: Inline Trivy warnings (non-PR fallback)
