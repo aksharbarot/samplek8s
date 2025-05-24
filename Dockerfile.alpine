@@ -1,7 +1,7 @@
 # Dockerfile.vuln
 FROM node:16.13.0
 
-# This version has known vulnerabilities in node & openssl
+# This version has known vulnerabilities in node & openssll
 RUN node --version && npm --version
 
 # Trigger Trivy secret scanner
