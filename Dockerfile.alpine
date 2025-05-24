@@ -1,14 +1,10 @@
-# Dockerfile.vuln-debian
-FROM debian:bullseye
+# Dockerfile.vuln
+FROM node:16.13.0
 
-# Outdated vulnerable package
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
-      libssl1.1=1.1.1n-0+deb11u3 \
-      curl && \
-    rm -rf /var/lib/apt/lists/*
+# This version has known vulnerabilities in node & openssl
+RUN node --version && npm --version
 
-# Fake secret to trigger Trivy secret scanner
+# Trigger Trivy secret scanner
 ENV AWS_SECRET_ACCESS_KEY="FAKEKEY123456"
 
-CMD ["openssl", "version"]
+CMD ["node"]
