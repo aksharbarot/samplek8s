@@ -120,15 +120,20 @@ jobs:
           > reports/trivy_warnings.log
 
           while read -r img; do
-            echo "🔍 Scanning $img"
+            out="reports/${img//\//_}.json"
+            echo "🔍 Scanning $img → $out"
             trivy image \
               --severity CRITICAL,HIGH,MEDIUM \
               --ignore-unfixed \
               --exit-code 1 \
               --format json \
               "$img" \
-              > "reports/${img//\//_}.json" \
-              2>> reports/trivy_warnings.log || true
+              > "$out" 2>> reports/trivy_warnings.log || true
+
+            # guarantee valid JSON even if Trivy wrote nothing
+            if [ ! -s "$out" ] || ! head -c1 "$out" | grep -q '{'; then
+              echo '{"Results":[]}' > "$out"
+            fi
           done < image-list/image_tags.txt
 
       - name: Warn if unsupported OS warnings showed up
@@ -164,7 +169,9 @@ jobs:
       - name: Inline Trivy warnings (non-PR fallback)
         if: github.event_name != 'pull_request'
         run: |
-          jq -s '.[] | .Results[]? | .Vulnerabilities[]?' reports/*.json \
+          for file in reports/*.json; do
+            echo "--- $file"
+            jq -c '.Results[]? .Vulnerabilities[]?' "$file" 2>/dev/null \
             | while read -r v; do
                 ID=$(echo "$v" | jq -r .VulnerabilityID)
                 PKG=$(echo "$v" | jq -r .PkgName)
@@ -172,14 +179,19 @@ jobs:
                 URL=$(echo "$v" | jq -r .PrimaryURL)
                 echo "::warning file=Dockerfile,line=1,title=Trivy::$ID in $PKG – Severity: $SEV – $URL"
               done
+          done
 
       - name: Aggregate & Fail on CVEs
         run: |
-          COUNT=$(jq -s '[ .[].Results[]?.Vulnerabilities[]?
-                             | select(.Severity=="CRITICAL" or .Severity=="HIGH" or .Severity=="MEDIUM")
-                           ] | length' reports/*.json)
-          echo "🧪 Found $COUNT CRITICAL/HIGH/MEDIUM vulnerabilities"
-          if [ "$COUNT" -gt 0 ]; then
+          total=0
+          for file in reports/*.json; do
+            count=$(jq '[.Results[]? .Vulnerabilities[]?
+                          | select(.Severity=="CRITICAL" or .Severity=="HIGH" or .Severity=="MEDIUM")
+                        ] | length' "$file")
+            total=$(( total + count ))
+          done
+          echo "🧪 Found $total CRITICAL/HIGH/MEDIUM vulnerabilities"
+          if [ "$total" -gt 0 ]; then
             echo "❌ Vulnerabilities detected!"
             exit 1
           else
