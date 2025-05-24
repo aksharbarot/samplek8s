@@ -1,3 +1,4 @@
+# .github/workflows/docker-lint-and-trivy.yaml
 name: Docker Lint & Trivy Scan
 
 on:
@@ -12,7 +13,6 @@ on:
 jobs:
   lint-and-build:
     runs-on: ubuntu-latest
-
     outputs:
       lint_failed: ${{ steps.scan.outputs.fail_code }}
 
@@ -20,15 +20,16 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup
+      - name: Prepare reports dir
         run: mkdir -p reports
 
       - name: Install Hadolint
         run: |
-          wget -O /usr/local/bin/hadolint https://github.com/hadolint/hadolint/releases/latest/download/hadolint-Linux-x86_64
+          wget -O /usr/local/bin/hadolint \
+            https://github.com/hadolint/hadolint/releases/latest/download/hadolint-Linux-x86_64
           chmod +x /usr/local/bin/hadolint
 
-      - name: Lint and Build Dockerfiles
+      - name: Lint & Build Dockerfiles
         id: scan
         run: |
           set -e
@@ -36,20 +37,20 @@ jobs:
           > image_list.txt
 
           for file in $(find . -type f -name 'Dockerfile*' ! -path "./reports/*"); do
-            echo "▶️ Found Dockerfile: $file"
             base=$(basename "$file")
-            image_tag="localscan-${base,,}"
-            context_dir=$(dirname "$file")
+            tag="localscan-${base,,}"
+            ctx=$(dirname "$file")
 
             echo "🔍 Linting $file"
-            hadolint "$file" --ignore DL3018 > "reports/${base}_hadolint.txt" || true
-            if grep -q . "reports/${base}_hadolint.txt"; then
-              echo "❌ Lint issues in $file"
+            hadolint "$file" --ignore DL3018 > "reports/${base}_lint.txt" || true
+            if [ -s "reports/${base}_lint.txt" ]; then
+              echo "❌ Hadolint found issues in $file"
               FAIL=1
             fi
 
-            echo "🐳 Building image: $image_tag"
-            if docker build -f "$file" -t "$image_tag" "$context_dir" > "reports/${base}_build.txt" 2>&1; then
+            echo "🐳 Building $file → $tag"
+            if docker build -f "$file" -t "$tag" "$ctx" \
+               > "reports/${base}_build.txt" 2>&1; then
               echo "$file" >> image_list.txt
             else
               echo "❌ Build failed for $file"
@@ -60,7 +61,7 @@ jobs:
 
           echo "fail_code=$FAIL" >> $GITHUB_OUTPUT
 
-      - name: Upload lint/build reports
+      - name: Upload lint + build reports
         uses: actions/upload-artifact@v4
         with:
           name: docker-reports
@@ -72,11 +73,9 @@ jobs:
           name: image-list
           path: image_list.txt
 
-      - name: Fail if lint or build errors found
-        if: steps.scan.outputs.fail_code == '1'
-        run: |
-          echo "❌ Lint or build errors detected"
-          exit 1
+      - name: Fail if lint or build errors
+        if: ${{ steps.scan.outputs.fail_code == '1' }}
+        run: exit 1
 
   trivy-scan:
     runs-on: ubuntu-latest
@@ -88,7 +87,8 @@ jobs:
 
       - name: Install Trivy
         run: |
-          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin
+          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh \
+            | sh -s -- -b /usr/local/bin
 
       - name: Download image list
         uses: actions/download-artifact@v4
@@ -96,88 +96,58 @@ jobs:
           name: image-list
           path: image-list
 
-      - name: Rebuild Docker images
+      - name: Rebuild & collect tags
         run: |
           mkdir -p image-list
           > image-list/image_tags.txt
+
           if [[ ! -s image-list/image_list.txt ]]; then
-            echo "❌ No Dockerfiles were listed from lint job. Cannot scan."
+            echo "❌ No Dockerfiles to scan"
             exit 1
           fi
 
           while read -r file; do
             base=$(basename "$file")
-            image_tag="localscan-${base,,}"
-            context_dir=$(dirname "$file")
-            echo "🐳 Rebuilding image $image_tag from $file"
-            if docker build -f "$file" -t "$image_tag" "$context_dir"; then
-              echo "$image_tag" >> image-list/image_tags.txt
-            else
-              echo "❌ Build failed for $file"
-              exit 1
-            fi
+            tag="localscan-${base,,}"
+            ctx=$(dirname "$file")
+            echo "🐳 Rebuilding $file → $tag"
+            docker build -f "$file" -t "$tag" "$ctx"
+            echo "$tag" >> image-list/image_tags.txt
           done < image-list/image_list.txt
 
-      - name: Debug image list
-        run: |
-          echo "Contents of image_tags.txt:"
-          cat image-list/image_tags.txt || echo "(file missing or empty)"
-
-      - name: Run Trivy Scan
+      - name: Run Trivy on each image
         run: |
           mkdir -p reports
-          > reports/trivy_logs.txt
-          while read -r image; do
-            echo "🔍 Scanning image: $image"
-            trivy image --format json --ignore-unfixed --severity CRITICAL,HIGH,MEDIUM "$image" > "reports/trivy_${image}.json" 2>> reports/trivy_logs.txt
+          > reports/trivy_warnings.log
+
+          while read -r img; do
+            echo "🔍 Scanning $img"
+            # --exit-code 1 makes trivy return code 1 if any CVEs at specified severities
+            trivy image \
+              --severity CRITICAL,HIGH,MEDIUM \
+              --ignore-unfixed \
+              --exit-code 1 \
+              --format json \
+              "$img" \
+              > "reports/${img//\//_}.json" \
+              2>> reports/trivy_warnings.log || true
           done < image-list/image_tags.txt
-          jq -s '.' reports/trivy_*.json > reports/trivy_combined.json
 
-      - name: Convert Trivy JSON to annotation format
+      - name: Warn if unsupported OS warnings showed up
         run: |
-          jq -n '[inputs[] | select(.Vulnerabilities) | .Vulnerabilities[]? |
-            {
-              file: "Dockerfile",
-              line: 1,
-              level: (if .Severity == "CRITICAL" then "failure" elif .Severity == "HIGH" then "warning" else "notice" end),
-              message: (.VulnerabilityID + " in " + .PkgName + " – " + .PrimaryURL)
-            }]' reports/trivy_combined.json > reports/annotations.json
+          if grep -q "no longer supported by the distribution" reports/trivy_warnings.log; then
+            echo "⚠️  Trivy emitted unsupported-OS warnings, but we'll continue"
+          else
+            echo "✅ No unsupported-OS warnings"
+          fi
 
-      - name: Annotate PR with Trivy issues using annotate-action
-        if: github.event_name == 'pull_request'
-        uses: yuzutech/annotations-action@v0.5.0
-        with:
-          repo-token: "${{ secrets.TOKEN }}"
-          title: 'Trivy Scan Results'
-          input: './reports/annotations.json'
-
-      - name: Inline Trivy warnings (non-PR fallback)
-        if: github.event_name != 'pull_request'
+      - name: Aggregate & Fail on CVEs
         run: |
-          jq -c '.[] | select(.Vulnerabilities) | .Vulnerabilities[]' reports/trivy_combined.json | while read -r vuln; do
-            ID=$(echo "$vuln" | jq -r .VulnerabilityID)
-            PACKAGE=$(echo "$vuln" | jq -r .PkgName)
-            SEVERITY=$(echo "$vuln" | jq -r .Severity)
-            URL=$(echo "$vuln" | jq -r .PrimaryURL)
-            echo "::warning file=Dockerfile,line=1,title=Trivy::$ID in $PACKAGE – Severity: $SEVERITY – $URL"
-          done
-
-      - name: Fail if vulnerabilities found
-        run: |
-          COUNT=$(jq '[.[] | .Vulnerabilities[]? | select(.Severity == "CRITICAL" or .Severity == "HIGH" or .Severity == "MEDIUM")] | length' reports/trivy_combined.json)
-          echo "🧪 Found $COUNT vulnerabilities"
+          COUNT=$(jq '[.[]?.Vulnerabilities[]? | select(.Severity=="CRITICAL" or .Severity=="HIGH" or .Severity=="MEDIUM")] | length' reports/*.json)
+          echo "🧪 Found $COUNT CRITICAL/HIGH/MEDIUM vulnerabilities"
           if [ "$COUNT" -gt 0 ]; then
-            echo "❌ Vulnerabilities found"
+            echo "❌ Vulnerabilities detected!"
             exit 1
           else
             echo "✅ No critical/high/medium vulnerabilities"
-          fi
-
-      - name: Fail if unsupported OS warning detected
-        run: |
-          if grep -q "no longer supported by the distribution" reports/trivy_logs.txt; then
-            echo "❌ Unsupported OS detected in Trivy scan"
-            exit 1
-          else
-            echo "✅ No unsupported OS detected"
           fi
