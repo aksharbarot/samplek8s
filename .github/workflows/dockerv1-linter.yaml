@@ -1,4 +1,3 @@
-# .github/workflows/docker-lint-and-trivy.yaml
 name: Docker Lint & Trivy Scan
 
 on:
@@ -122,7 +121,6 @@ jobs:
 
           while read -r img; do
             echo "🔍 Scanning $img"
-            # --exit-code 1 makes trivy return code 1 if any CVEs at specified severities
             trivy image \
               --severity CRITICAL,HIGH,MEDIUM \
               --ignore-unfixed \
@@ -141,9 +139,45 @@ jobs:
             echo "✅ No unsupported-OS warnings"
           fi
 
+      - name: Convert Trivy JSON to annotation format
+        if: github.event_name == 'pull_request'
+        run: |
+          jq -s '[ .[].Results[]? .Vulnerabilities[]?
+                    | {
+                        file:    "Dockerfile",
+                        line:    1,
+                        level:   (if .Severity=="CRITICAL" then "failure"
+                                  elif .Severity=="HIGH"    then "warning"
+                                  else "notice" end),
+                        message: "\(.VulnerabilityID) in \(.PkgName) – \(.PrimaryURL)"
+                      }
+                  ]' reports/*.json > reports/annotations.json
+
+      - name: Annotate PR with Trivy issues
+        if: github.event_name == 'pull_request'
+        uses: yuzutech/annotations-action@v0.5.0
+        with:
+          repo-token: "${{ secrets.TOKEN }}"
+          title: 'Trivy Scan Results'
+          input: './reports/annotations.json'
+
+      - name: Inline Trivy warnings (non-PR fallback)
+        if: github.event_name != 'pull_request'
+        run: |
+          jq -s '.[] .Results[]? .Vulnerabilities[]?' reports/*.json \
+            | while read -r v; do
+                ID=$(echo "$v" | jq -r .VulnerabilityID)
+                PACKAGE=$(echo "$v" | jq -r .PkgName)
+                SEV=$(echo "$v" | jq -r .Severity)
+                URL=$(echo "$v" | jq -r .PrimaryURL)
+                echo "::warning file=Dockerfile,line=1,title=Trivy::$ID in $PACKAGE – Severity: $SEV – $URL"
+              done
+
       - name: Aggregate & Fail on CVEs
         run: |
-          COUNT=$(jq '[.[]?.Vulnerabilities[]? | select(.Severity=="CRITICAL" or .Severity=="HIGH" or .Severity=="MEDIUM")] | length' reports/*.json)
+          COUNT=$(jq -s '[ .[].Results[]?.Vulnerabilities[]?
+                             | select(.Severity=="CRITICAL" or .Severity=="HIGH" or .Severity=="MEDIUM")
+                           ] | length' reports/*.json)
           echo "🧪 Found $COUNT CRITICAL/HIGH/MEDIUM vulnerabilities"
           if [ "$COUNT" -gt 0 ]; then
             echo "❌ Vulnerabilities detected!"
