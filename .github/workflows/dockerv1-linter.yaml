@@ -111,11 +111,15 @@ jobs:
       - name: Run Trivy Scan
         run: |
           mkdir -p reports
+          > reports/trivy_logs.txt
           while read -r image; do
             echo "🔍 Scanning image: $image"
-            trivy image --format json --ignore-unfixed --severity CRITICAL,HIGH,MEDIUM "$image" > "reports/trivy_${image}.json"
-          done < image-list/image_tags.txt
-          jq -s '.' reports/trivy_*.json > reports/trivy_combined.json
+            trivy image --format json --ignore-unfixed --severity CRITICAL,HIGH,MEDIUM "$image" \
+              > "reports/trivy_${image}.json" \
+              2>> reports/trivy_logs.txt
+            done < image-list/image_tags.txt
+            jq -s '.' reports/trivy_*.json > reports/trivy_combined.json
+
 
       - name: Convert Trivy JSON to annotation format
         run: |
@@ -157,7 +161,8 @@ jobs:
           fi
       - name: Fail if unsupported OS warning detected
         run: |
-          if grep -q "no longer supported by the distribution" reports/trivy_combined.json; then
+          if grep -q "no longer supported by the distribution" reports/trivy_logs.txt; then
             echo "❌ Unsupported OS detected in Trivy scan"
             exit 1
           fi
+
