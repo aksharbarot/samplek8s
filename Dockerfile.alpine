@@ -1,12 +1,14 @@
-# Dockerfile.vulnerable
-FROM alpine:3.18
+# Dockerfile.vuln-debian
+FROM debian:bullseye
 
-# Intentionally using outdated packages to simulate CVEs
-RUN apk add --no-cache \
-    openssl=3.0.9-r2 \
-    curl=8.0.1-r0
+# Outdated vulnerable package
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+      libssl1.1=1.1.1n-0+deb11u3 \
+      curl && \
+    rm -rf /var/lib/apt/lists/*
 
-# Simulated secret for Trivy's secret scanner
+# Fake secret to trigger Trivy secret scanner
 ENV AWS_SECRET_ACCESS_KEY="FAKEKEY123456"
 
 CMD ["openssl", "version"]
