@@ -209,3 +209,9 @@ jobs:
           else
             echo "✅ No CRITICAL/HIGH/MEDIUM vulnerabilities"
           fi
+
+      - name: Upload Trivy reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-reports
+          path: reports/
