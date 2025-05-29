@@ -1,0 +1,64 @@
+name: Lint and Format Shell Scripts
+
+on:
+  push:
+    paths:
+      - '**/*.sh'
+  pull_request:
+    paths:
+      - '**/*.sh'
+
+jobs:
+  shellcheck-lint:
+    runs-on: ubuntu-latest
+    name: Shell Lint & Format
+
+    permissions:
+      contents: write
+
+    steps:
+
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.TOKEN }}
+
+      - name: Check current branch and remote
+        run: |
+            echo "Current branch: $(git rev-parse --abbrev-ref HEAD)"
+            git remote -v
+
+      - name: Install tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y shellcheck shfmt
+
+      - name: Run ShellCheck and save logs
+        run: |
+          mkdir -p lint-reports
+          touch lint-reports/shellcheck.log
+          FAIL=0
+          for file in $(find . -type f -name '*.sh'); do
+            echo "Linting $file" | tee -a lint-reports/shellcheck.log
+            shellcheck "$file" 2>&1 | tee -a lint-reports/shellcheck.log || FAIL=1
+          done
+          exit $FAIL
+
+      - name: Format with shfmt
+        run: shfmt -w .
+
+      - name: Commit formatted shell scripts
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "chore: auto-format shell scripts using shfmt"
+          branch: docker-lint
+          token: ${{ secrets.TOKEN }}
+          commit_user_name: "robot-auto"
+          commit_user_email: "axar1990@gmail.com"
+          commit_author: "Akshar Barot <axar1990@gmail.com>"
+
+      - name: Upload Lint Logs
+        if: ${{ env.ACT != 'true' && steps.results-path.outcome == 'success' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: shell-lint-report
+          path: lint-reports/shellcheck.log

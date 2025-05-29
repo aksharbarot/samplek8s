@@ -1,0 +1,10 @@
+# Dockerfile.vuln
+FROM node:10.24.1
+
+# Node 10 has known CVEs in both the Node runtime and its Debian base..
+RUN node --version && npm --version
+
+# Trigger Trivy secret scanning too
+ENV AWS_SECRET_ACCESS_KEY="FAKEKEY123456"
+
+CMD ["node"]
