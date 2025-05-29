@@ -3,10 +3,10 @@ name: GitVersion & Release
 on:
   push:
     tags:
-      - 'v*'
+      - 'v*'  # Triggers on version tags like v1.0.0
 
 permissions:
-  contents: write  # Needed to create a GitHub release
+  contents: write  # Required for creating GitHub releases
 
 jobs:
   version-release:
@@ -16,7 +16,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # Required by GitVersion
+          fetch-depth: 0  # Important for GitVersion to access full git history
 
       - name: Install GitVersion
         uses: gittools/actions/gitversion/setup@v3.2.1
@@ -28,7 +28,8 @@ jobs:
         uses: gittools/actions/gitversion/execute@v3.2.1
 
       - name: Print calculated version
-        run: echo "Calculated version: ${{ steps.gitversion.outputs.fullSemVer }}"
+        run: |
+          echo "Calculated version: ${{ steps.gitversion.outputs.fullSemVer }}"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
