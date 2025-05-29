@@ -1,9 +1,9 @@
-name: GitVersion & Release
+name: GitVersion & Helm Release
 
 on:
   push:
     tags:
-      - 'v*'  # Example: v1.0.0
+      - 'v*'
 
 jobs:
   version-release:
@@ -13,25 +13,22 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # Important for GitVersion to access full git history
+          fetch-depth: 0
 
-      - name: Setup GitVersion
-        uses: gittools/actions/gitversion/setup@v0.9.18
-
-      - name: Run GitVersion
+      - name: GitVersion
         id: gitversion
-        uses: gittools/actions/gitversion/execute@v0.9.18
+        uses: GitTools/actions@v3.2.1
 
-      - name: Print calculated version
+      - name: Package Helm charts
         run: |
-          echo "Calculated version: ${{ steps.gitversion.outputs.fullSemVer }}"
+          mkdir -p release-assets
+          helm package charts/my-app -d release-assets
 
-      - name: Create GitHub Release
+      - name: Create GitHub Release with Helm Chart
         uses: softprops/action-gh-release@v1
         with:
           tag_name: v${{ steps.gitversion.outputs.fullSemVer }}
           name: Release v${{ steps.gitversion.outputs.fullSemVer }}
-          draft: false
-          prerelease: false
+          files: release-assets/*.tgz
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
