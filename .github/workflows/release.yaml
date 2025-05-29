@@ -6,7 +6,7 @@ on:
       - 'v*'
 
 permissions:
-  contents: write 
+  contents: write  # Needed to create a GitHub release
 
 jobs:
   version-release:
@@ -16,7 +16,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-depth: 0  # Required by GitVersion
 
       - name: Install GitVersion
         uses: gittools/actions/gitversion/setup@v3.2.1
@@ -35,5 +35,7 @@ jobs:
         with:
           tag_name: v${{ steps.gitversion.outputs.fullSemVer }}
           name: Release v${{ steps.gitversion.outputs.fullSemVer }}
+          draft: false
+          prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
