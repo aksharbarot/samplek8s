@@ -1,37 +1,37 @@
-name: Version & Release
+name: GitVersion & Release
 
 on:
   push:
-    branches:
-      - main  # or 'release/**' based on your strategy
-  workflow_dispatch:
+    tags:
+      - 'v*'  # Example: v1.0.0
 
 jobs:
-  generate-version:
+  version-release:
     runs-on: ubuntu-latest
-    outputs:
-      version: ${{ steps.gitversion.outputs.semver }}
-    steps:
-      - uses: actions/checkout@v4
 
-      - name: Install GitVersion
-        uses: gittools/actions/gitversion/setup@v0.11.0
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
         with:
-          versionSpec: '5.x'
+          fetch-depth: 0  # Important for GitVersion to access full git history
+
+      - name: Setup GitVersion
+        uses: gittools/actions/gitversion/setup@v0.9.18
 
       - name: Run GitVersion
         id: gitversion
-        uses: gittools/actions/gitversion/execute@v0.11.0
+        uses: gittools/actions/gitversion/execute@v0.9.18
 
-      - name: Show calculated version
-        run: echo "Version is ${{ steps.gitversion.outputs.semver }}"
+      - name: Print calculated version
+        run: |
+          echo "Calculated version: ${{ steps.gitversion.outputs.fullSemVer }}"
 
-      # Optional: Create GitHub Release
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
-          tag_name: v${{ steps.gitversion.outputs.semver }}
-          name: Release v${{ steps.gitversion.outputs.semver }}
-          generate_release_notes: true
+          tag_name: v${{ steps.gitversion.outputs.fullSemVer }}
+          name: Release v${{ steps.gitversion.outputs.fullSemVer }}
+          draft: false
+          prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
