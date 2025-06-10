@@ -1,0 +1,115 @@
+# =============================================================
+# File: .github/actions/helm-dry-run/action.yaml
+# Purpose: composite action that renders a Helm chart using a
+#          dry‑run against an AWS EKS cluster. Can be consumed
+#          *locally* (uses: ./.github/actions/helm-dry-run) **or**
+#          *remotely* (uses: my‑org/helm-dry-run@v1).
+# =============================================================
+name: "Helm Dry-Run"
+description: >-
+  Render a Helm chart with --dry-run/--debug against an AWS EKS
+  cluster using short‑lived OIDC credentials. Designed to be
+  reusable from *any* repository.
+
+inputs:
+  cluster-name:  { description: "EKS cluster name",            required: true }
+  region:        { description: "AWS region",                  required: true }
+  release-name:  { description: "Helm release to simulate",    required: true }
+  chart-path:    { description: "Path or OCI ref of chart",    required: true }
+  namespace:     { description: "K8s namespace",               required: false, default: "default" }
+  ## —— optional OCI registry support ———————————————————
+  ecr-registry:  { description: "(opt) Private ECR registry",  required: false, default: "" }
+  registry-role: { description: "(opt) ARN for ECR read role", required: false, default: "" }
+  ## —— cluster-role selection ——————————————————————————
+  cluster-read-role:
+    description: |
+      (opt) ARN of a read‑only role that has eks:Describe*/List* and is
+      already trusted for GitHub OIDC.  If **omitted**, the action will
+      look for <cluster-name>-readonly inside the caller repository at
+      the same JSON path used by OnScale:
+      .github/shared-library/.../clusters-arn.json
+    required: false
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+        token: ${{ ( github.token == '' && secrets.PAT_TOKEN ) || github.token }}
+
+    # ──────────────────────────────────────────────────────────
+    - name: Assume role for chart registry (read‑only)
+      if: ${{ inputs.ecr-registry != '' && inputs.registry-role != '' }}
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: ${{ inputs.registry-role }}
+        aws-region:     ${{ inputs.region }}
+
+    - name: Helm registry login
+      if: ${{ inputs.ecr-registry != '' && inputs.registry-role != '' }}
+      shell: bash
+      run: |
+        set -euo pipefail
+        aws ecr get-login-password --region "${{ inputs.region }}" |
+          helm registry login --username AWS --password-stdin "${{ inputs.ecr-registry }}"
+
+    - name: Resolve read‑only EKS role ARN
+      id: role
+      shell: bash
+      run: |
+        set -euo pipefail
+        if [[ -n "${{ inputs.cluster-read-role }}" ]]; then
+          echo "role_arn=${{ inputs.cluster-read-role }}" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+        ROLE_FILE=".github/shared-library/reusable-workflow-configs/helm-deploy-to-EKS-clusters-job/clusters-arn.json"
+        if [[ ! -f "$ROLE_FILE" ]]; then
+          echo "::error::cluster-read-role input not set and $ROLE_FILE not found; cannot resolve role." >&2
+          exit 1
+        fi
+        ROLE_ARN=$(jq -r --arg c "${{ inputs.cluster-name }}" '.[$c+"-readonly"]' "$ROLE_FILE")
+        if [[ -z "$ROLE_ARN" || "$ROLE_ARN" == "null" ]]; then
+          echo "::error::Readonly role for ${{ inputs.cluster-name }} not found in $ROLE_FILE" >&2
+          exit 1
+        fi
+        echo "role_arn=$ROLE_ARN" >> "$GITHUB_OUTPUT"
+
+    - name: Assume read‑only EKS role
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: ${{ steps.role.outputs.role_arn }}
+        aws-region:     ${{ inputs.region }}
+        unset-current-credentials: true
+
+    - name: Update kubeconfig
+      shell: bash
+      run: |
+        set -euo pipefail
+        aws eks update-kubeconfig \
+          --name "${{ inputs.cluster-name }}" \
+          --region "${{ inputs.region }}" \
+          --kubeconfig ./tmp_kubeconfig
+
+    - name: Install Helm
+      uses: azure/setup-helm@v3
+
+    - name: Helm dry‑run
+      id: render
+      shell: bash
+      run: |
+        set -o pipefail
+        helm upgrade --install "${{ inputs.release-name }}" "${{ inputs.chart-path }}" \
+          --namespace "${{ inputs.namespace }}" \
+          --dry-run --debug --hide-secret \
+          --kubeconfig ./tmp_kubeconfig | tee manifest.yaml
+        echo "manifest<<EOF" >> "$GITHUB_OUTPUT"
+        cat manifest.yaml >> "$GITHUB_OUTPUT"
+        echo "EOF" >> "$GITHUB_OUTPUT"
+
+outputs:
+  manifest:
+    description: "Rendered YAML manifest"
+    value: ${{ steps.render.outputs.manifest }}
