@@ -1,0 +1,34 @@
+name: Helm Dry‑Run
+
+on:
+  pull_request:
+    paths: [ 'k8s/bundles/**' ]
+  push:
+    branches: [ main ]
+    paths: [ 'k8s/bundles/**' ]
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  preview:
+    runs-on: ubuntu-latest
+    steps:
+      - id: helm
+        uses: ./.github/actions/helm-dry-run           # LOCAL repo call
+        with:
+          cluster-name: dev-eu-1
+          region:       eu-west-1
+          release-name: portal-bff
+          chart-path:   k8s/bundles/portal-bff
+          namespace:    portal-bff
+          # cluster-read-role: arn:aws:iam::123456789012:role/github-readonly-dev-eu-1
+          # ↑ Leave **commented or remove** when clusters-arn.json exists
+
+      - name: Upload rendered manifest
+        uses: actions/upload-artifact@v4
+        with:
+          name: helm-manifest-${{ github.sha }}
+          path: manifest.yaml
+          retention-days: 7
