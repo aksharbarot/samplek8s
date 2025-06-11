@@ -23,11 +23,7 @@ inputs:
   ## —— cluster-role selection ——————————————————————————
   cluster-read-role:
     description: |
-      (opt) ARN of a read‑only role that has eks:Describe*/List* and is
-      already trusted for GitHub OIDC.  If **omitted**, the action will
-      look for <cluster-name>-readonly inside the caller repository at
-      the same JSON path used by OnScale:
-      .github/shared-library/.../clusters-arn.json
+      /clusters-arn.json
     required: false
     default: ""
 
