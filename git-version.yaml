@@ -1,0 +1,7 @@
+mode: ContinuousDeployment
+
+branches:
+  main:
+    regex: ^main$
+    increment: Minor
+    track-merge-target: false
