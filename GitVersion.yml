@@ -5,3 +5,4 @@ branches:
     regex: ^main$
     increment: Minor
     track-merge-target: false
+    
