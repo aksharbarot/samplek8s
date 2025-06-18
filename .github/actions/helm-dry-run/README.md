@@ -35,7 +35,7 @@ A reusable GitHub Actions **composite** that renders a Helm chart with `--dry-r
 | --------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
 | **GitHub OIDC** trust on your IAM roles | Same setup you use for deploy roles (`sts:AssumeRoleWithWebIdentity`).                                              |
 | Read‑only IAM policy                    | `eks:Describe*` and `eks:List*` are enough. Add `ecr:GetAuthorizationToken` if pulling OCI charts from private ECR. |
-| Helm ≥ 3.13 on runner                   | The action installs it via `azure/setup-helm@v3`.                                                                   |
+| **Helm v3.18.2 pinned** | `ubuntu-latest` ships with Helm, but its version drifts. The action **installs v3.18.2** via `azure/setup-helm@v4.3.0` so every run is identical. |                                                               |
 | (Optional) `clusters-arn.json`          | Only needed for *implicit* role lookup.                                                                             |
 
 ---
