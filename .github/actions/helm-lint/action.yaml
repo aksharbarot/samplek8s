@@ -1,0 +1,17 @@
+name: helm-lint
+description: >
+  Run `helm lint --strict` on a chart and fail on warnings or errors.
+
+inputs:
+  chart_path:
+    description: Path to the chart to lint
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Run helm lint in strict mode
+      shell: bash
+      run: |
+        echo "🔍 Linting chart: ${{ inputs.chart_path }}"
+        helm lint --strict "${{ inputs.chart_path }}"
