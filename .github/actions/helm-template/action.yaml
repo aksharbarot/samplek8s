@@ -1,0 +1,42 @@
+name: helm-template
+description: >
+  Render a Helm chart with every *-values.yaml (or *.yml) file in a directory; fail on the
+  first rendering error.
+
+inputs:
+  chart_path:
+    description: Path to the chart to render
+    required: true
+  values_dir:
+    description: Directory containing values files (defaults to chart_path)
+    required: false
+    default: .
+  extra_args:
+    description: Additional CLI args to pass to helm template
+    required: false
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - name: Render all values files
+      shell: bash
+      run: |
+        CHART="${{ inputs.chart_path }}"
+        VALUES_DIR="${{ inputs.values_dir }}"
+        ARGS="${{ inputs.extra_args }}"
+
+        echo "📄 Looking for *-values.yaml files in: $VALUES_DIR"
+        shopt -s nullglob
+        files=("$VALUES_DIR"/*-values.yaml "$VALUES_DIR"/*-values.yml)
+        shopt -u nullglob
+
+        if [[ ${#files[@]} -eq 0 ]]; then
+          echo "::warning::No *-values.yaml files found in $VALUES_DIR – nothing to render."
+          exit 0
+        fi
+
+        for f in "${files[@]}"; do
+          echo "⛵ helm template $CHART --values $f $ARGS"
+          helm template "$CHART" --values "$f" $ARGS
+        done
