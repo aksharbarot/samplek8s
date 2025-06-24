@@ -1,0 +1,34 @@
+name: yamllint-values
+description: >
+  Fail fast on any malformed *-values.yaml / *-values.yml file.
+inputs:
+  values_dir:
+    description: Directory to recurse for values files
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: YAML syntax check
+      shell: bash
+      run: |
+        set -e
+
+        # Build a list (handles “no match” safely)
+        mapfile -t files < <(
+          find "${{ inputs.values_dir }}" -type f \( -name '*-values.yaml' -o -name '*-values.yml' \)
+        )
+
+        if [[ ${#files[@]} -eq 0 ]]; then
+          echo "::notice ::No *-values.yaml files found in ${{ inputs.values_dir }}"
+          exit 0
+        fi
+
+        # Minimal config: relaxed spacing, but fail on any syntax error
+        cat > /tmp/yamllint.yml <<'CFG'
+        extends: relaxed
+        rules:
+          truthy: disable      # allow yes/no
+        CFG
+
+        echo "🔍 yamllint on ${#files[@]} file(s)…"
+        yamllint -c /tmp/yamllint.yml "${files[@]}"
