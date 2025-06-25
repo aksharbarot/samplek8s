@@ -3,45 +3,81 @@ name: Helm chart checks
 on:
   push:
     branches: [ main, master ]
-    paths:     # run only when charts or action files change
-      - 'charts/**'
-      - '.github/actions/**'
+    paths: [ 'charts/**', '.github/actions/**' ]
   pull_request:
     branches: [ main, master ]
-    paths:
-      - 'charts/**'
-      - '.github/actions/**'
-  workflow_dispatch:       # manual run with optional inputs
+    paths: [ 'charts/**', '.github/actions/**' ]
+  workflow_dispatch:
     inputs:
-      chart-path:
-        description: 'Path to the Helm chart'
-        required: true
-        default: 'charts/my-awesome-chart'
-      values-dir:
-        description: 'Dir with *-values.yaml files (defaults to chart path)'
+      extra-helm-args:
+        description: 'Extra flags for "helm template" (e.g. --kube-version 1.29.2)'
         required: false
         default: ''
 
 jobs:
-  helm-ci:
+  discover-charts:
     runs-on: ubuntu-latest
+    outputs:
+      charts: ${{ steps.list.outputs.charts }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: list
+        name: Build JSON array of chart directories
+        shell: bash
+        run: |
+          set -e
+          json="["
+          first=1
+          for d in charts/*/ ; do
+            [[ -d "$d" ]] || continue
+            c="$(basename "$d")"
+            [[ $first -eq 0 ]] && json+=", "
+            json+="\"$c\""
+            first=0
+          done
+          json+="]"
+          echo "Found charts: $json"
+          echo "charts=$json" >>"$GITHUB_OUTPUT"
+
+  per-chart:
+    needs: discover-charts
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        chart: ${{ fromJson(needs.discover-charts.outputs.charts) }}
+      fail-fast: false
 
     steps:
       - uses: actions/checkout@v4
 
+      # --- toolchain -----------------------------------------------------------------
+      - uses: actions/setup-python@v5        # pip → yamllint
+        with: { python-version: '3.x' }
+
+      - run: pip install --quiet yamllint
+        name: Install yamllint
+
       - name: Set up Helm
         uses: azure/setup-helm@v4
-        with:
-          version: v3.15.0   # pin the version you prefer
+        with: { version: v3.15.0 }
+      # -------------------------------------------------------------------------------
 
+      # 1. YAML syntax / “parse” step  ❌ fails immediately on bad files
+      - name: Lint values YAML
+        uses: ./.github/actions/yamllint-values
+        with:
+          values_dir: charts/${{ matrix.chart }}
+
+      # 2. Helm lint  (chart metadata & template sanity)
       - name: Lint chart (strict)
         uses: ./.github/actions/helm-lint
         with:
-          chart_path: ${{ github.event.inputs.chart-path || 'charts/my-awesome-chart' }}
+          chart_path: charts/${{ matrix.chart }}
 
+      # 3. Helm template  (render every values file)
       - name: Template render check
         uses: ./.github/actions/helm-template
         with:
-          chart_path: ${{ github.event.inputs.chart-path || 'charts/my-awesome-chart' }}
-          values_dir: ${{ github.event.inputs.values-dir || '' }}
-          # extra_args: "--namespace test --kube-version 1.29.2"
+          chart_path: charts/${{ matrix.chart }}
+          values_dir: charts/${{ matrix.chart }}
+          extra_args: ${{ github.event.inputs.extra-helm-args }}
